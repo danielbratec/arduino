@@ -1,0 +1,233 @@
+
+#include <LiquidCrystal.h> //Inclui a biblioteca do LCD
+                           // Include LCD's library
+
+/*
+  Radar de velocidade para veículos automotores.
+  Controle de semáforo.
+  
+  Speed radar for autos.
+  Traffic light control.
+*/
+
+
+//------------------ RADAR
+const int PIEZO_1_PIN = A0; // sensor de pressão - primeiro
+                            // pressor sensor - first
+const int PIEZO_2_PIN = A1; // sensor de pressão - segundo
+                            // pressor sensor - second
+const int FLASH_PIN = 8; // flash da câmera do radar, quando o veículo leva multa
+                         // camera flash of the radar, when the veicule gets a speed ticket
+const int BLINK_PIN = 9; // luz amarela piscante do radar
+                         // blinking yellow light of the radar
+
+const double VELOCIDADE_LIMITE = 5; // Velocidade limite da via: 40 km/h
+                                     // Speed limit: 40 km/h
+const double DISTANCIA = 0.10; // A distância entre os sensores: 10 cm --> 0,10 m
+                               // The distance between the sensors: : 10 cm --> 0,10 m
+
+const int LIMITE_PRESSAO = 500; // valor mínimo que o sensor deve enviar para considerar que ele foi ativado
+                                // mininal value that the sensor must send to be considered activated
+
+unsigned long tempoIni = 0;
+unsigned long tempoFim = 0;
+unsigned long lastBlink = 0;
+unsigned long lastFlash = 0;
+
+//LiquidCrystal lcd(12, 11, 5, 4, 3, 2); //Configura os pinos do Arduino para se comunicar com o LCD
+LiquidCrystal lcd(7, 6, 5, 4, 3, 2); // Configura os pinos do Arduino para se comunicar com o LCD
+                                     // Configures the Arduino pins to communicate with the LCD
+
+
+//------------------ SEMÁFORO
+//------------------ TRAFFIC LIGHTS
+const int REDLIGHT_PIN = 11;     // vermelho - red
+const int YELLOWLIGHT_PIN = 12;  // amarelo - yellow
+const int GREENLIGHT_PIN = 13;   // verde - green
+
+const int YELLOW_TIME = 2000; // 2 seg de amarelo
+                              // 2 secs of yellow
+const int LIGHT_TIME = 10000; // 10 seg de vermelho e verde
+                              // 10 secs of red and green lights
+
+unsigned long ultimaPassada = 0;
+int light = 0; // 0 = vermelho; 1 = amarelo; 2 = verde
+               // 0 = red; 1 = yellow; 2 = green
+
+void setup() {
+  // put your setup code here, to run once:
+  iniciarSemaforo();
+  iniciarRadar();
+  
+  Serial.begin(9600);
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  semaforo();
+  radar();
+}
+
+void iniciarSemaforo() {
+  pinMode(REDLIGHT_PIN, OUTPUT);
+  pinMode(YELLOWLIGHT_PIN, OUTPUT);          
+  pinMode(GREENLIGHT_PIN, OUTPUT);
+  
+  digitalWrite(REDLIGHT_PIN, LOW);
+  digitalWrite(YELLOWLIGHT_PIN, LOW);
+  digitalWrite(GREENLIGHT_PIN, HIGH);
+  light = 2; // GREEN
+  ultimaPassada = 0;
+}
+
+void semaforo() {
+  if (ultimaPassada == 0) {
+    ultimaPassada = millis();
+  }
+  
+  if (light == 0) { // RED
+    if (millis() - ultimaPassada >= LIGHT_TIME) {
+      digitalWrite(REDLIGHT_PIN, LOW);
+      digitalWrite(YELLOWLIGHT_PIN, LOW);
+      digitalWrite(GREENLIGHT_PIN, HIGH);
+      light = 2; // GREEN
+      ultimaPassada = millis();
+    }
+  } else if (light == 1) { // YELLOW
+    if (millis() - ultimaPassada >= YELLOW_TIME) {
+      digitalWrite(REDLIGHT_PIN, HIGH);
+      digitalWrite(YELLOWLIGHT_PIN, LOW);
+      digitalWrite(GREENLIGHT_PIN, LOW);
+      light = 0; // RED
+      ultimaPassada = millis();
+    }
+  } else { // GREEN
+    if (millis() - ultimaPassada >= LIGHT_TIME) {
+      digitalWrite(REDLIGHT_PIN, LOW);
+      digitalWrite(YELLOWLIGHT_PIN, HIGH);
+      digitalWrite(GREENLIGHT_PIN, LOW);
+      light = 1; // YELLOW
+      ultimaPassada = millis();
+    }
+  }
+}
+
+void iniciarRadar() {
+//  pinMode(PIEZO_1_PIN, INPUT); // Não é necessário, pois são entradas analógicas
+//  pinMode(PIEZO_2_PIN, INPUT); // Not necessary, because they are not digital entries
+  pinMode(FLASH_PIN, OUTPUT);
+  pinMode(BLINK_PIN, OUTPUT);   
+
+
+  digitalWrite(FLASH_PIN, LOW);
+  digitalWrite(BLINK_PIN, LOW);
+
+  tempoIni = 0;
+  tempoFim = 0;
+  lastBlink = 0;
+  lastFlash = 0;
+  
+  lcd.begin(16, 2); //Inicia o LCD com dimensÃµes 16x2(Colunas x Linhas)
+  lcd.setCursor(12, 1); //Posiciona o cursor na primeira coluna(12) e na segunda linha(1) do LCD - Escreve alinhado a direita
+  lcd.print("Km/h");
+}
+
+void radar() {
+  // ----------------------------------Luzes
+  // ----------------------------------Ligths
+  // pisca-pisca a cada 1 seg
+  // blinks at every 1 sec
+  if ((millis() - lastBlink) > 1000 ) { 
+    if (digitalRead(BLINK_PIN) == LOW) {
+      digitalWrite(BLINK_PIN, HIGH);
+    } else {
+      digitalWrite(BLINK_PIN, LOW);
+    }
+    lastBlink = millis();
+  }
+  // flash da câmera dura 0,5 seg
+  // camera flash lasts 0.5 secs
+  if ((millis() - lastFlash) > 500 ) { 
+    digitalWrite(FLASH_PIN, LOW);
+    lastFlash = 0;
+  }
+
+  // ----------------------------------Radar  
+  int piezo1Valor = analogRead(PIEZO_1_PIN);
+  int piezo2Valor = analogRead(PIEZO_2_PIN);
+  bool piezo1Ativado = false;
+  bool piezo2Ativado = false;
+  if (piezo1Valor >= LIMITE_PRESSAO) {
+    piezo1Ativado = true;
+  } else if (piezo2Valor >= LIMITE_PRESSAO) {
+    piezo2Ativado = true;
+  }
+  if (!piezo1Ativado && !piezo2Ativado) {
+    return;
+  }
+  
+  // Log for Serial Monitor
+  Serial.print("piezo_1 = ");
+  Serial.print(piezo1Valor);
+  Serial.print("\tpiezo_2 = ");
+  Serial.println(piezo2Valor);
+  
+  if (tempoIni == 0 && tempoFim == 0 && piezo1Ativado == true) {
+    tempoIni = micros();
+    
+    Serial.print("tempoIni = ");
+    Serial.println(tempoIni);
+  } else if (tempoIni > 0 && tempoFim == 0 && piezo2Ativado == true) {
+    tempoFim = micros();
+    
+    Serial.print("tempoFim = ");
+    Serial.println(tempoFim);
+  }
+  
+  double intervaloTempo = 0;
+  if (tempoIni != 0 && tempoFim != 0) {
+    intervaloTempo = double(tempoFim - tempoIni) / 1000000;
+    
+    // reseta os valores
+    tempoIni = 0;
+    tempoFim = 0;
+    
+    piezo1Ativado = false;
+    piezo2Ativado = false;
+    
+  } else {
+    return; 
+  }
+
+  double velocidade = 0.0;
+  if (intervaloTempo > 0) {
+    velocidade = (DISTANCIA / 1000) / (intervaloTempo / 3600); // transforma de m/s para km/h
+                                                               // make the conversion from m/s to km/h
+    
+    Serial.print("intervalorTempo = ");
+    Serial.println(intervaloTempo);
+    
+    if (velocidade > VELOCIDADE_LIMITE) {
+      Serial.print("Multado!!!\t");
+      Serial.print(velocidade);
+      Serial.println(" Km/h");
+      
+      // disparar o flash da câmera
+      // triggers the camera flash
+      digitalWrite(FLASH_PIN, HIGH);
+      lastFlash = millis();
+      
+    } else {
+      Serial.print(velocidade);
+      Serial.println(" Km/h");
+    }
+    
+    // Coloca dois dígitos na velocidade. Ex.: 9 -> 09
+    String velo = String(int(velocidade));
+    velo = velo.length() < 2 ? ("0" + velo) : velo;
+    lcd.setCursor(13, 0); //Posiciona o cursor na 13ª coluna(13) e na segunda linha(0) do LCD - Escreve alinhado a direita
+    lcd.print("    "); // Apaga o último número
+    lcd.setCursor(13, 0); //Posiciona o cursor na 13ª coluna(13) e na segunda linha(0) do LCD - Escreve alinhado a direita
+    lcd.print(velo);
+  }
+}
